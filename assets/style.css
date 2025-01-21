@@ -1,0 +1,30 @@
+.owocni-calendar table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.owocni-calendar th,
+.owocni-calendar td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+
+.owocni-calendar .disabled {
+    background-color: #eee;
+    color: #999;
+}
+.calendar-navigation{
+    text-align: center;
+    margin-bottom: 20px;
+}
+.calendar-navigation a{
+    margin: 0 5px;
+}
+
+@media (max-width: 1024px) {
+    
+}
+@media (max-width: 767px) {
+    
+}
