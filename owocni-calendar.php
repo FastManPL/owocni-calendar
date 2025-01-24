@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Owocni Calendar Widget for Elementor
  * Description: Kalendrz od Owocnych
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: Dawid Nowak / Owocni.pl
  */
 
@@ -57,6 +57,8 @@ function owocni_calendar_settings_callback( $post ) {
     ?>
     <label for="owocni_calendar_interval">Interwał wizyt (minuty):</label>
     <input type="number" id="owocni_calendar_interval" name="owocni_calendar_interval" value="<?php echo isset($settings['interval']) ? $settings['interval'] : '30'; ?>"><br><br>
+    <label for="owocni_calendar_offset">Offset wizyty (HH:MM), określenie za jaki czas od obecnej godziny można rezerwować najbliższą wizytę:</label>
+    <input type="time" id="owocni_calendar_offset" name="owocni_calendar_offset" value="<?php echo isset($settings['offset']) ? $settings['offset'] : '00:00'; ?>"><br><br>
     <?php foreach ($days as $day): ?>
         <h3><?php echo $day; ?></h3>
         <label for="owocni_calendar_start_<?php echo $day; ?>">Godzina rozpoczęcia:</label>
@@ -86,6 +88,7 @@ function owocni_save_calendar_settings( $post_id ) {
 
     $settings = array();
     $settings['interval'] = isset($_POST['owocni_calendar_interval']) ? sanitize_text_field($_POST['owocni_calendar_interval']) : '30';
+    $settings['offset'] = isset($_POST['owocni_calendar_offset']) ? sanitize_text_field($_POST['owocni_calendar_offset']) : '00:00'; 
     $days = ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela'];
     foreach ($days as $day){
         $settings['start'][$day] = isset($_POST['owocni_calendar_start_' . $day]) ? sanitize_text_field($_POST['owocni_calendar_start_' . $day]) : '09:00';
@@ -119,13 +122,6 @@ function custom_elementor_widgets_enqueue_styles() {
         plugin_dir_url( __FILE__ ) . 'assets/style.css'
     );
 
-    wp_enqueue_script(
-        'owocni-calendar-ajax',
-        plugin_dir_url( __FILE__ ) . 'assets/script-ajax.js',
-        [ 'jquery' ],
-        '1.0.0',
-        true
-    );
 
     wp_enqueue_script(
         'owocni-calendar-js',
