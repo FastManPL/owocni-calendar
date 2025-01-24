@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Owocni Calendar Widget for Elementor
  * Description: Kalendrz od Owocnych
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Dawid Nowak / Owocni.pl
  */
 
@@ -15,7 +15,6 @@ function owocni_register_calendar_cpt() {
     $labels = array(
         'name'                  => _x( 'Kalendarze', 'Post Type General Name', 'owocni-calendar' ),
         'singular_name'         => _x( 'Kalendarz', 'Post Type Singular Name', 'owocni-calendar' ),
-        // ... inne etykiety
     );
     $args = array(
         'label'               => __( 'Kalendarze', 'owocni-calendar' ),
@@ -41,7 +40,6 @@ function owocni_register_calendar_cpt() {
 }
 add_action( 'init', 'owocni_register_calendar_cpt' );
 
-// Meta Boxy dla ustawień kalendarza
 function owocni_calendar_metaboxes() {
     add_meta_box( 'owocni_calendar_settings', 'Ustawienia Kalendarza', 'owocni_calendar_settings_callback', 'owocni_calendar', 'normal', 'high' );
 }
@@ -331,3 +329,6 @@ function zapisz_rezerwacje() {
         }
     }
 }
+
+
+require_once('includes/przelewy24-settings.php');

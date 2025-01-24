@@ -182,6 +182,9 @@ class Owocni_Calendar_Widget extends \Elementor\Widget_Base {
                         ));
                         $is_reserved = false;
                         foreach ($rezerwacje as $rezerwacja) {
+                            if (strpos($rezerwacja->post_title, 'ODRZUCONE') !== false && (current_time('timestamp') - get_post_time('U', true, $rezerwacja->ID)) > 2 * HOUR_IN_SECONDS) {
+                                continue;
+                            }
                             $godzina_od = get_post_meta($rezerwacja->ID, 'godzina_od', true);
                             $godzina_do = get_post_meta($rezerwacja->ID, 'godzina_do', true);
                             if ($current_time >= $godzina_od && $current_time < $godzina_do) {
@@ -213,7 +216,7 @@ class Owocni_Calendar_Widget extends \Elementor\Widget_Base {
                         } 
                         if ($start_is_set && $end_is_set && $calendar_settings['start'][$day_pl] !== '--:--' && $calendar_settings['end'][$day_pl] !== '--:--' && $calendar_settings['start'][$day_pl] !== '' && $calendar_settings['end'][$day_pl] !== '') {
                             if ($current_time >= $calendar_settings['start'][$day_pl] && $current_time <= $calendar_settings['end'][$day_pl] && !$is_reserved) {
-                                echo '<button class="rezerwuj-termin" data-date="' . date('Y-m-d', $day_timestamp) . '" data-time="' . $current_time . '" data-calendar="' . $calendar_id . '">'. $current_time .'</button>';
+                                echo '<button class="rezerwuj-termin" data-date="' . date('Y-m-d', $day_timestamp) . '" data-time="' . $current_time . '" data-calendar="' . $calendar_id . '" data-interval="' . $calendar_settings['interval'] . '" >'. $current_time .'</button>';
                             } else if ($current_time >= $calendar_settings['start'][$day_pl] && $current_time <= $calendar_settings['end'][$day_pl] && $is_reserved){
                                 echo '';
                             } 
@@ -243,11 +246,144 @@ class Owocni_Calendar_Widget extends \Elementor\Widget_Base {
         echo '</tbody>';
         echo '</table>';
         echo '<div id="modal-backdrop"></div>';
-        echo '<div id="rezerwacja-modal">
-            <div class="modal-content">
-                <span class="zamknij-modal">&times;</span>
-                <h2>Formularz Rezerwacji</h2>
-                <form id="rezerwacja-form" method="post" action="' . admin_url('admin-post.php') . '">
+echo '<div id="rezerwacja-modal">
+    <div class="modal-content">
+        <span class="zamknij-modal">&times;</span>
+        <h2>Formularz Rezerwacji</h2>';
+
+if (isset($_POST['action']) && $_POST['action'] == 'zapisz_rezerwacje') {
+
+
+    $merchantId = get_option('owocni_calendar_p24_merchant_id');
+    $posId = get_option('owocni_calendar_p24_pos_id');
+    $crc = get_option('owocni_calendar_p24_crc');
+    if (!$merchantId || !$posId || !$crc) {
+        error_log("Błąd: Brak ustawień Przelewy24.");
+        echo '<p style="color: red;">Błąd: Brak ustawień Przelewy24.</p>';
+        return;
+    }
+    // 1. Walidacja i formatowanie danych wejściowych
+    $data = isset($_POST['data']) ? sanitize_text_field($_POST['data']) : null;
+    $godzina_od = isset($_POST['godzina_od']) ? sanitize_text_field($_POST['godzina_od']) : null;
+    $imie_nazwisko = isset($_POST['imie_nazwisko']) ? sanitize_text_field($_POST['imie_nazwisko']) : null;
+    $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : null;
+    $telefon = isset($_POST['telefon']) ? sanitize_text_field($_POST['telefon']) : null;
+    $dodatkowe_informacje = isset($_POST['dodatkowe_informacje']) ? sanitize_textarea_field($_POST['dodatkowe_informacje']) : null;
+    $wybrany_kalendarz = isset($_POST['wybrany_kalendarz']) ? intval($_POST['wybrany_kalendarz']) : null;
+
+    // Sprawdzenie, czy wszystkie wymagane dane są obecne
+    if (!$data || !$godzina_od || !$wybrany_kalendarz) {
+        error_log("Brakujące dane w formularzu.");
+        echo '<p style="color: red;">Błąd: Brakujące dane w formularzu.</p>';
+        return;
+    }
+
+    // 2. Obliczanie godzina_do na podstawie interwału kalendarza
+    $interval = isset($calendar_settings['interval']) ? intval($calendar_settings['interval']) : 30;
+    $godzina_do = date('H:i', strtotime($godzina_od . ' +' . $interval . ' minutes'));
+    if ($godzina_do === false) {
+        error_log("Błąd: Niepoprawny format godziny od: " . $godzina_od);
+        echo '<p style="color: red;">Błąd: Niepoprawny format godziny od.</p>';
+        return;
+    }
+    // 3. Tworzenie rezerwacji (jako "oczekująca na płatność")
+    $rezerwacja_id = wp_insert_post(array(
+        'post_type' => 'rezerwacja',
+        'post_title' => $data . ' ' . $godzina_od . ' - ' . $godzina_do . ' - ' . $imie_nazwisko,
+        'post_status' => 'publish',
+        'meta_input' => array(
+            'data' => $data,
+            'godzina_od' => $godzina_od,
+            'godzina_do' => $godzina_do,
+            'imie_nazwisko' => $imie_nazwisko,
+            'email' => $email,
+            'telefon' => $telefon,
+            'dodatkowe_informacje' => $dodatkowe_informacje,
+            'wybrany_kalendarz' => $wybrany_kalendarz,
+            'p24_session_id' => uniqid(),
+            'p24_order_id' => null,
+            'p24_status' => 'pending',
+        ),
+    ));
+
+    if (is_wp_error($rezerwacja_id)) {
+        error_log("Błąd zapisu rezerwacji: " . $rezerwacja_id->get_error_message());
+        echo '<p style="color: red;">Błąd zapisu rezerwacji.</p>';
+        return; // Ważne, aby zatrzymać dalsze wykonywanie kodu
+    }
+
+    // 3. Dane transakcji
+    $sessionId = get_post_meta($rezerwacja_id, 'p24_session_id', true);
+    $amount = 100; // Kwota w groszach - **ZMIENIĆ NA CENĘ WIZYTY!**
+    $currency = 'PLN';
+    $description = 'Rezerwacja wizyty';
+    $email = $_POST['email']; // Można użyć $email z walidacji
+    $urlReturn = 'https://propozycje.owocni.pl/akademiakrakenaKopia/rezerwacja-wizyty-dziekujemy/?rezerwacja_id=' . $rezerwacja_id;
+    $urlStatus = admin_url('admin-post.php?action=p24_status_update&rezerwacja_id=' . $rezerwacja_id);
+    $timeLimit = 15;
+
+    // 4. Obliczanie sumy kontrolnej (sign)
+    $sign = hash('sha384', $posId . '|' . $sessionId . '|' . $amount . '|' . $currency . '|' . $crc);
+
+    // 5. Przygotowanie danych do wysłania
+    $data = array(
+        'merchantId' => $merchantId,
+        'posId' => $posId,
+        'sessionId' => $sessionId,
+        'amount' => $amount,
+        'currency' => $currency,
+        'description' => $description,
+        'email' => $email,
+        'urlReturn' => $urlReturn,
+        'urlStatus' => $urlStatus,
+        'timeLimit' => $timeLimit,
+        'sign' => $sign,
+        'p24_json' => 1,
+    );
+
+    // 6. Wysyłanie żądania do API Przelewy24 (używamy cURL)
+    $url = 'https://secure.przelewy24.pl/api/v1/transaction/register';
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, array(
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($data),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_SSL_VERIFYPEER => false, // **NIEZALECANE W PRODUKCJI!**
+    ));
+
+    $response = curl_exec($ch);
+
+    if (curl_errno($ch)) {
+        $error_msg = curl_error($ch);
+        echo "Błąd cURL: " . $error_msg;
+        curl_close($ch);
+        return;
+    }
+    curl_close($ch);
+
+    // 7. Obsługa odpowiedzi z API (parsowanie JSON)
+    $response_data = json_decode($response, true);
+
+    if (isset($response_data['status']) && $response_data['status'] == 200) {
+        $token = $response_data['data']['token'];
+        $payment_url = 'https://secure.przelewy24.pl/trnRequest/' . $token;
+        wp_redirect($payment_url);
+        exit;
+    } else {
+        $error_message = isset($response_data['error']['message']) ? $response_data['error']['message'] : "Nieznany błąd Przelewy24.";
+        echo '<p style="color: red;">Błąd Przelewy24: ' . $error_message . '</p>';
+        $post = array(
+            'ID' => $rezerwacja_id,
+            'post_title' => 'ODRZUCONE - ' . get_the_title($rezerwacja_id),
+            'meta_input' => array(
+                'platnosc' => 'Płatność odrzucona',
+            ),
+        );
+        wp_update_post($post);
+    }
+
+} else { echo '<form id="rezerwacja-form" method="post" action="">
                     <input type="hidden" name="action" value="zapisz_rezerwacje">
                     <input type="hidden" id="rezerwacja_data" name="data">
                     <input type="hidden" id="rezerwacja_godzina_od" name="godzina_od">
@@ -255,16 +391,17 @@ class Owocni_Calendar_Widget extends \Elementor\Widget_Base {
                     <input type="hidden" name="post_type" value="rezerwacja">
                     <input type="hidden" name="wybrany_kalendarz" id="rezerwacja_kalendarz">
                     <label for="imie_nazwisko">Imię i nazwisko:</label><br>
-                    <input type="text" id="imie_nazwisko" name="imie_nazwisko"><br><br>
+                    <input type="text" id="imie_nazwisko" value="test debug" name="imie_nazwisko"><br><br>
                     <label for="email">Email:</label><br>
-                    <input type="email" id="email" name="email"><br><br>
+                    <input type="email" id="email" value="debug@debug.pl" name="email"><br><br>
                     <label for="telefon">Telefon:</label><br>
-                    <input type="text" id="telefon" name="telefon"><br><br>
+                    <input type="text" id="telefon" value="test debug" name="telefon"><br><br>
                     <label for="dodatkowe_informacje">Dodatkowe informacje:</label><br>
                     <textarea id="dodatkowe_informacje" name="dodatkowe_informacje"></textarea><br><br>
                     <input type="submit" value="Zarezerwuj">
-                </form>
-            </div>
-        </div>';
+                </form>';
+}
+echo '</div></div>';
+
     }
 }

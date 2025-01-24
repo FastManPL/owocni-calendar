@@ -3,7 +3,8 @@ jQuery(document).ready(function ($) {
     const date = $(this).data("date");
     const time = $(this).data("time");
     const calendar = $(this).data("calendar");
-    const endTime = addTime(time, "' . $calendar_settings['interval'] . '");
+    const interval = parseInt($(this).data("interval"));
+    const endTime = addTime(time, interval);
 
     $("#rezerwacja_data").val(date);
     $("#rezerwacja_godzina_od").val(time);
