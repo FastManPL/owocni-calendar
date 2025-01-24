@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Owocni Calendar Widget for Elementor
  * Description: Kalendrz od Owocnych
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Dawid Nowak / Owocni.pl
  */
 
@@ -138,3 +138,200 @@ function custom_elementor_widgets_enqueue_styles() {
 add_action( 'wp_enqueue_scripts', 'custom_elementor_widgets_enqueue_styles' );
 
 
+function register_rezerwacja_post_type() {
+    $labels = array(
+        'name'                  => _x( 'Rezerwacje', 'Post Type General Name', 'text_domain' ),
+        'singular_name'         => _x( 'Rezerwacja', 'Post Type Singular Name', 'text_domain' ),
+        'menu_name'             => __( 'Rezerwacje', 'text_domain' ),
+        'name_admin_bar'        => __( 'Rezerwacja', 'text_domain' ),
+        'archives'              => __( 'Archiwum rezerwacji', 'text_domain' ),
+        'attributes'            => __( 'Atrybuty rezerwacji', 'text_domain' ),
+        'parent_item_colon'     => __( 'Nadrzędna rezerwacja:', 'text_domain' ),
+        'all_items'             => __( 'Wszystkie rezerwacje', 'text_domain' ),
+        'add_new_item'          => __( 'Dodaj nową rezerwację', 'text_domain' ),
+        'add_new'               => __( 'Dodaj nową', 'text_domain' ),
+        'new_item'              => __( 'Nowa rezerwacja', 'text_domain' ),
+        'edit_item'             => __( 'Edytuj rezerwację', 'text_domain' ),
+        'update_item'           => __( 'Aktualizuj rezerwację', 'text_domain' ),
+        'view_item'             => __( 'Zobacz rezerwację', 'text_domain' ),
+        'view_items'            => __( 'Zobacz rezerwacje', 'text_domain' ),
+        'search_items'          => __( 'Szukaj rezerwacji', 'text_domain' ),
+        'not_found'             => __( 'Nie znaleziono rezerwacji', 'text_domain' ),
+        'not_found_in_trash'    => __( 'Nie znaleziono rezerwacji w koszu', 'text_domain' ),
+        'featured_image'        => __( 'Zdjęcie wyróżniające', 'text_domain' ),
+        'set_featured_image'    => __( 'Ustaw zdjęcie wyróżniające', 'text_domain' ),
+        'remove_featured_image' => __( 'Usuń zdjęcie wyróżniające', 'text_domain' ),
+        'use_featured_image'    => __( 'Użyj jako zdjęcia wyróżniającego', 'text_domain' ),
+        'insert_into_item'      => __( 'Wstaw do rezerwacji', 'text_domain' ),
+        'uploaded_to_this_item' => __( 'Przesłano do tej rezerwacji', 'text_domain' ),
+        'items_list'            => __( 'Lista rezerwacji', 'text_domain' ),
+        'items_list_navigation' => __( 'Nawigacja po liście rezerwacji', 'text_domain' ),
+        'filter_items_list'     => __( 'Filtruj listę rezerwacji', 'text_domain' ),
+    );
+    $args = array(
+        'label'                 => __( 'Rezerwacja', 'text_domain' ),
+        'description'           => __( 'Rezerwacje terminów', 'text_domain' ),
+        'labels'                => $labels,
+        'supports'              => array( 'title' ), 
+        'taxonomies'            => array(),
+        'hierarchical'          => false,
+        'public'                => false, 
+        'show_ui'               => true,
+        'show_in_menu'          => true,
+        'menu_position'         => 5,
+        'menu_icon'             => 'dashicons-calendar-alt',
+        'show_in_admin_bar'     => true,
+        'show_in_nav_menus'     => false,
+        'can_export'            => true,
+        'has_archive'           => false,
+        'exclude_from_search'   => true,
+        'publicly_queryable'    => false,
+        'capability_type'       => 'post',
+        'show_in_rest'          => false,
+    );
+    register_post_type( 'rezerwacja', $args );
+}
+add_action( 'init', 'register_rezerwacja_post_type', 0 );
+
+function add_rezerwacja_meta_boxes() {
+    add_meta_box(
+        'rezerwacja_dane',
+        __( 'Dane rezerwacji', 'text_domain' ),
+        'render_rezerwacja_meta_box',
+        'rezerwacja',
+        'normal',
+        'high'
+    );
+}
+add_action( 'add_meta_boxes', 'add_rezerwacja_meta_boxes' );
+
+
+function render_rezerwacja_meta_box( $post ) {
+    wp_nonce_field( 'rezerwacja_meta_box_nonce', 'rezerwacja_meta_box_nonce' );
+
+    $data = get_post_meta( $post->ID, 'data', true );
+    $godzina_od = get_post_meta( $post->ID, 'godzina_od', true );
+    $godzina_do = get_post_meta( $post->ID, 'godzina_do', true );
+    $wybrany_kalendarz = get_post_meta( $post->ID, 'wybrany_kalendarz', true );
+        $imie_nazwisko = get_post_meta( $post->ID, 'imie_nazwisko', true );
+        $dodatkowe_informacje = get_post_meta( $post->ID, 'dodatkowe_informacje', true );
+        $cena = get_post_meta( $post->ID, 'cena', true );
+        $platnosc = get_post_meta( $post->ID, 'platnosc', true );
+        $email = get_post_meta( $post->ID, 'email', true );
+        $telefon = get_post_meta( $post->ID, 'telefon', true );
+
+    ?>
+    <label for="data"><?php _e( 'Data', 'text_domain' ); ?></label><br>
+    <input type="date" id="data" name="data" value="<?php echo esc_attr( $data ); ?>"><br><br>
+
+    <label for="godzina_od"><?php _e( 'Godzina od', 'text_domain' ); ?></label><br>
+    <input type="time" id="godzina_od" name="godzina_od" value="<?php echo esc_attr( $godzina_od ); ?>"><br><br>
+
+    <label for="godzina_do"><?php _e( 'Godzina do', 'text_domain' ); ?></label><br>
+    <input type="time" id="godzina_do" name="godzina_do" value="<?php echo esc_attr( $godzina_do ); ?>"><br><br>
+
+    <label for="wybrany_kalendarz"><?php _e( 'Wybrany kalendarz', 'text_domain' ); ?></label><br>
+<select id="wybrany_kalendarz" name="wybrany_kalendarz">
+    <?php
+    $kalendarze = get_posts(array(
+        'post_type' => 'owocni_calendar', 
+        'posts_per_page' => -1, 
+        'orderby' => 'title',
+        'order' => 'ASC',
+    ));
+
+    if ($kalendarze) { 
+        foreach ($kalendarze as $kalendarz) {
+            $selected = ($wybrany_kalendarz == $kalendarz->ID) ? 'selected' : '';
+            echo '<option value="' . $kalendarz->ID . '" ' . $selected . '>' . esc_html($kalendarz->post_title) . '</option>';
+        }
+    } else {
+                echo '<option value="">Brak kalendarzy</option>';
+        }
+    ?>
+</select><br><br>
+
+                <label for="imie_nazwisko"><?php _e( 'Imię i nazwisko', 'text_domain' ); ?></label><br>
+    <input type="text" id="imie_nazwisko" name="imie_nazwisko" value="<?php echo esc_attr( $imie_nazwisko ); ?>"><br><br>
+
+                <label for="dodatkowe_informacje"><?php _e( 'Dodatkowe informacje', 'text_domain' ); ?></label><br>
+    <textarea id="dodatkowe_informacje" name="dodatkowe_informacje"><?php echo esc_textarea( $dodatkowe_informacje ); ?></textarea><br><br>
+
+                <label for="cena"><?php _e( 'Cena', 'text_domain' ); ?></label><br>
+    <input type="number" step="0.01" id="cena" name="cena" value="<?php echo esc_attr( $cena ); ?>"><br><br>
+
+    <label for="platnosc"><?php _e( 'Informacje o płatności', 'text_domain' ); ?></label><br>
+    <input type="text" id="platnosc" name="platnosc" value="<?php echo esc_attr( $platnosc ); ?>"><br><br>
+
+                <label for="email"><?php _e( 'Email', 'text_domain' ); ?></label><br>
+    <input type="email" id="email" name="email" value="<?php echo esc_attr( $email ); ?>"><br><br>
+
+                <label for="telefon"><?php _e( 'Telefon', 'text_domain' ); ?></label><br>
+    <input type="text" id="telefon" name="telefon" value="<?php echo esc_attr( $telefon ); ?>"><br><br>
+    <?php
+}
+
+function save_rezerwacja_meta_box_data( $post_id ) {
+    if ( ! isset( $_POST['rezerwacja_meta_box_nonce'] ) || ! wp_verify_nonce( $_POST['rezerwacja_meta_box_nonce'], 'rezerwacja_meta_box_nonce' ) ) {
+        return;
+    }
+
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+        return;
+    }
+
+    if ( isset( $_POST['post_type'] ) && 'rezerwacja' == $_POST['post_type'] ) {
+        if ( ! current_user_can( 'edit_post', $post_id ) ) { 
+            return;
+        }
+    } else {
+        return;
+    }
+
+        $fields = array('data', 'godzina_od', 'godzina_do', 'wybrany_kalendarz', 'imie_nazwisko', 'dodatkowe_informacje', 'cena', 'platnosc', 'email', 'telefon');
+
+        foreach ($fields as $field) {
+                if ( isset( $_POST[$field] ) ) {
+                        update_post_meta( $post_id, $field, sanitize_text_field( $_POST[$field] ) );
+                }
+        }
+}
+add_action( 'save_post', 'save_rezerwacja_meta_box_data' );
+
+add_action( 'admin_post_zapisz_rezerwacje', 'zapisz_rezerwacje' );
+function zapisz_rezerwacje() {
+    if ( isset( $_POST['action'] ) && $_POST['action'] == 'zapisz_rezerwacje' ) {
+                $data = sanitize_text_field($_POST['data']);
+                $godzina_od = sanitize_text_field($_POST['godzina_od']);
+        $godzina_do = sanitize_text_field($_POST['godzina_do']);
+        $wybrany_kalendarz = sanitize_text_field($_POST['wybrany_kalendarz']);
+        $imie_nazwisko = sanitize_text_field($_POST['imie_nazwisko']);
+        $dodatkowe_informacje = sanitize_textarea_field($_POST['dodatkowe_informacje']);
+        $email = sanitize_email($_POST['email']);
+        $telefon = sanitize_text_field($_POST['telefon']);
+
+        $post_title = $data . ' ' . $godzina_od . ' - ' . $godzina_do;
+
+        $post_id = wp_insert_post( array(
+            'post_type' => 'rezerwacja',
+            'post_status' => 'publish',
+                        'post_title' => $post_title
+        ));
+
+        if ($post_id) {
+                        update_post_meta($post_id, 'data', $data);
+                        update_post_meta($post_id, 'godzina_od', $godzina_od);
+                        update_post_meta($post_id, 'godzina_do', $godzina_do);
+                        update_post_meta($post_id, 'wybrany_kalendarz', $wybrany_kalendarz);
+                        update_post_meta($post_id, 'imie_nazwisko', $imie_nazwisko);
+                        update_post_meta($post_id, 'dodatkowe_informacje', $dodatkowe_informacje);
+                        update_post_meta($post_id, 'email', $email);
+                        update_post_meta($post_id, 'telefon', $telefon);
+
+            wp_redirect( wp_get_referer() ); 
+            exit;
+        } else {
+            wp_die('Błąd podczas zapisywania rezerwacji.');
+        }
+    }
+}

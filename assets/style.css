@@ -17,7 +17,9 @@
 .calendar-navigation{
     text-align: center;
     margin-bottom: 20px;
+    display:flex;justify-content:center;align-items:center;
 }
+.calendar-navigation #datepicker {width: 10rem;margin: 0 10px;font-size: 0.7rem;}
 .calendar-navigation a{
     margin: 0 5px;
 }
