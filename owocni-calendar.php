@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Owocni Calendar Widget for Elementor
  * Description: Kalendrz od Owocnych
- * Version: 1.0.4
+ * Version: 1.1.0
  * Author: Dawid Nowak / Owocni.pl
  */
 
@@ -57,6 +57,14 @@ function owocni_calendar_settings_callback( $post ) {
     <input type="number" id="owocni_calendar_interval" name="owocni_calendar_interval" value="<?php echo isset($settings['interval']) ? $settings['interval'] : '30'; ?>"><br><br>
     <label for="owocni_calendar_offset">Offset wizyty (HH:MM), określenie za jaki czas od obecnej godziny można rezerwować najbliższą wizytę:</label>
     <input type="time" id="owocni_calendar_offset" name="owocni_calendar_offset" value="<?php echo isset($settings['offset']) ? $settings['offset'] : '00:00'; ?>"><br><br>
+    <label for="owocni_calendar_reservation_limit">Czas trwania rezerwacji (HH:MM), określenie po jakim czasie nieopłacony termin jest zwalniany</label>
+    <input type="time" id="owocni_calendar_reservation_limit" name="owocni_calendar_reservation_limit" value="<?php echo isset($settings['reservation_limit']) ? $settings['reservation_limit'] : '00:00'; ?>"><br><br>
+    <label for="owocni_calendar_visit_price">Cena wizyty (PLN):</label>
+    <input type="number" id="owocni_calendar_visit_price" name="owocni_calendar_visit_price" value="<?php echo isset($settings['visit_price']) ? $settings['visit_price'] : '100'; ?>"><br><br>
+    <label for="owocni_calendar_return_url">URL powrotu po płatności (podziękowanie):</label>
+    <input type="text" id="owocni_calendar_return_url" style="width:100%;" name="owocni_calendar_return_url" value="<?php echo isset($settings['return_url']) ? $settings['return_url'] : '' ?>"><br><br>
+    
+    
     <?php foreach ($days as $day): ?>
         <h3><?php echo $day; ?></h3>
         <label for="owocni_calendar_start_<?php echo $day; ?>">Godzina rozpoczęcia:</label>
@@ -87,6 +95,9 @@ function owocni_save_calendar_settings( $post_id ) {
     $settings = array();
     $settings['interval'] = isset($_POST['owocni_calendar_interval']) ? sanitize_text_field($_POST['owocni_calendar_interval']) : '30';
     $settings['offset'] = isset($_POST['owocni_calendar_offset']) ? sanitize_text_field($_POST['owocni_calendar_offset']) : '00:00'; 
+    $settings['reservation_limit'] = isset($_POST['owocni_calendar_reservation_limit']) ? sanitize_text_field($_POST['owocni_calendar_reservation_limit']) : '00:00';
+    $settings['visit_price'] = isset($_POST['owocni_calendar_visit_price']) ? sanitize_text_field($_POST['owocni_calendar_visit_price']) : '0';
+    $settings['return_url'] = isset($_POST['owocni_calendar_return_url']) ? sanitize_text_field($_POST['owocni_calendar_return_url']) : home_url('/');
     $days = ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela'];
     foreach ($days as $day){
         $settings['start'][$day] = isset($_POST['owocni_calendar_start_' . $day]) ? sanitize_text_field($_POST['owocni_calendar_start_' . $day]) : '09:00';
@@ -246,22 +257,22 @@ function render_rezerwacja_meta_box( $post ) {
 </select><br><br>
 
                 <label for="imie_nazwisko"><?php _e( 'Imię i nazwisko', 'text_domain' ); ?></label><br>
-    <input type="text" id="imie_nazwisko" name="imie_nazwisko" value="<?php echo esc_attr( $imie_nazwisko ); ?>"><br><br>
+    <input type="text" id="imie_nazwisko" style="width:100%;" name="imie_nazwisko" value="<?php echo esc_attr( $imie_nazwisko ); ?>"><br><br>
 
                 <label for="dodatkowe_informacje"><?php _e( 'Dodatkowe informacje', 'text_domain' ); ?></label><br>
-    <textarea id="dodatkowe_informacje" name="dodatkowe_informacje"><?php echo esc_textarea( $dodatkowe_informacje ); ?></textarea><br><br>
+    <textarea id="dodatkowe_informacje" style="width:100%;" name="dodatkowe_informacje"><?php echo esc_textarea( $dodatkowe_informacje ); ?></textarea><br><br>
 
                 <label for="cena"><?php _e( 'Cena', 'text_domain' ); ?></label><br>
     <input type="number" step="0.01" id="cena" name="cena" value="<?php echo esc_attr( $cena ); ?>"><br><br>
 
     <label for="platnosc"><?php _e( 'Informacje o płatności', 'text_domain' ); ?></label><br>
-    <input type="text" id="platnosc" name="platnosc" value="<?php echo esc_attr( $platnosc ); ?>"><br><br>
+    <input type="text" id="platnosc" style="width:100%;" name="platnosc" value="<?php echo esc_attr( $platnosc ); ?>"><br><br>
 
                 <label for="email"><?php _e( 'Email', 'text_domain' ); ?></label><br>
-    <input type="email" id="email" name="email" value="<?php echo esc_attr( $email ); ?>"><br><br>
+    <input type="email" id="email" style="width:100%;" name="email" value="<?php echo esc_attr( $email ); ?>"><br><br>
 
                 <label for="telefon"><?php _e( 'Telefon', 'text_domain' ); ?></label><br>
-    <input type="text" id="telefon" name="telefon" value="<?php echo esc_attr( $telefon ); ?>"><br><br>
+    <input type="text" id="telefon" style="width:100%;" name="telefon" value="<?php echo esc_attr( $telefon ); ?>"><br><br>
     <?php
 }
 
@@ -336,9 +347,7 @@ function update_payment_info_display($post_id) {
     $p24_session_id = get_post_meta($post_id, 'p24_session_id', true);
     $p24_order_id = get_post_meta($post_id, 'p24_order_id', true);
     $kwota = get_post_meta($post_id, 'kwota', true);
-
     $payment_info = '';
-    
     if ($p24_status) {
         if ($p24_status == 'completed' || $p24_status == 'paid') {
             $payment_info = 'Status: OPŁACONE';
@@ -346,18 +355,26 @@ function update_payment_info_display($post_id) {
             $payment_info = 'Status: OCZEKUJE NA PŁATNOŚĆ';
         } elseif ($p24_status == 'failed') {
             $payment_info = 'Status: PŁATNOŚĆ ODRZUCONA';
+        } else {
+            $payment_info = 'Status: ' . $p24_status;
         }
-        
         if ($kwota) {
             $payment_info .= ' | Kwota: ' . number_format($kwota/100, 2, ',', ' ') . ' PLN';
         }
-        
         if ($p24_session_id) {
             $payment_info .= ' | ID sesji: ' . $p24_session_id;
         }
-        
         if ($p24_order_id) {
             $payment_info .= ' | ID zamówienia: ' . $p24_order_id;
+        }
+        update_post_meta($post_id, 'platnosc', $payment_info);
+    } else if ($p24_session_id) {
+        $payment_info = 'Status: OCZEKUJE NA PŁATNOŚĆ';
+        if ($kwota) {
+            $payment_info .= ' | Kwota: ' . number_format($kwota/100, 2, ',', ' ') . ' PLN';
+        }
+        if ($p24_session_id) {
+            $payment_info .= ' | ID sesji: ' . $p24_session_id;
         }
         update_post_meta($post_id, 'platnosc', $payment_info);
     }
@@ -368,7 +385,6 @@ function update_payment_info_after_save($post_id, $post, $update) {
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
         return;
     }
-    
     if (!$update) {
         return;
     }
