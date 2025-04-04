@@ -246,162 +246,417 @@ class Owocni_Calendar_Widget extends \Elementor\Widget_Base {
         echo '</tbody>';
         echo '</table>';
         echo '<div id="modal-backdrop"></div>';
-echo '<div id="rezerwacja-modal">
-    <div class="modal-content">
-        <span class="zamknij-modal">&times;</span>
-        <h2>Formularz Rezerwacji</h2>';
+        echo '<div id="rezerwacja-modal">
+            <div class="modal-content">
+                <span class="zamknij-modal">&times;</span>
+                <h2>Formularz Rezerwacji</h2>';
 
-if (isset($_POST['action']) && $_POST['action'] == 'zapisz_rezerwacje') {
+        // Sprawdzenie czy jest to powrót z płatności
+        if (isset($_GET['p24_order_id']) && isset($_GET['p24_session_id'])) {
+            $p24_order_id = sanitize_text_field($_GET['p24_order_id']);
+            $p24_session_id = sanitize_text_field($_GET['p24_session_id']);
+            
+            // Znajdź rezerwację po session_id
+            $rezerwacje = get_posts(array(
+                'post_type' => 'rezerwacja',
+                'meta_query' => array(
+                    array(
+                        'key' => 'p24_session_id',
+                        'value' => $p24_session_id,
+                        'compare' => '=',
+                    ),
+                ),
+                'posts_per_page' => 1,
+            ));
+            
+            if (!empty($rezerwacje)) {
+                $rezerwacja_id = $rezerwacje[0]->ID;
+                
+                // Aktualizuj dane płatności
+                update_post_meta($rezerwacja_id, 'p24_order_id', $p24_order_id);
+                
+                // Sprawdź status płatności w P24
+                $merchantId = get_option('owocni_calendar_p24_merchant_id');
+                $posId = get_option('owocni_calendar_p24_pos_id');
+                $crc = get_option('owocni_calendar_p24_crc');
+                $apiKey = get_option('owocni_calendar_p24_api_key');
+                $p24Mode = get_option('owocni_calendar_p24_mode', 'sandbox');
+                $isSandbox = ($p24Mode === 'sandbox');
+                
+                $apiUrl = $isSandbox ? 'https://sandbox.przelewy24.pl/api/v1/transaction/verify' : 'https://secure.przelewy24.pl/api/v1/transaction/verify';
+                
+                $data = array(
+                    'merchantId' => $merchantId,
+                    'posId' => $posId,
+                    'sessionId' => $p24_session_id,
+                    'amount' => get_post_meta($rezerwacja_id, 'kwota', true),
+                    'currency' => 'PLN',
+                    'orderId' => $p24_order_id
+                );
+                
+                $sign = hash('sha384', json_encode([
+                    'sessionId' => $session_id,
+                    'merchantId' => (int)$merchantId,
+                    'amount' => (int)$kwota,
+                    'currency' => 'PLN',
+                    'crc' => $crc
+                ]));
+                $data['sign'] = $sign;
+                
+                // Wywołaj API P24 do weryfikacji transakcji
+                $response = wp_remote_post($apiUrl, array(
+                    'headers' => array(
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Basic ' . base64_encode($merchantId . ':' . $apiKey)
+                    ),
+                    'body' => json_encode($data)
+                ));
+                
+                if (!is_wp_error($response)) {
+                    $body = json_decode(wp_remote_retrieve_body($response), true);
+                    
+                    if (isset($body['data']['status']) && $body['data']['status'] === 'success') {
+                        // Płatność zakończona sukcesem
+                        update_post_meta($rezerwacja_id, 'p24_status', 'completed');
+                        echo '<div class="payment-success">
+                                <h3>Płatność zakończona pomyślnie!</h3>
+                                <p>Twoja rezerwacja została potwierdzona. Dziękujemy!</p>
+                            </div>';
+                            
+                        // Wyślij e-mail z potwierdzeniem
+                        $email = get_post_meta($rezerwacja_id, 'email', true);
+                        $imie_nazwisko = get_post_meta($rezerwacja_id, 'imie_nazwisko', true);
+                        $data = get_post_meta($rezerwacja_id, 'data', true);
+                        $godzina_od = get_post_meta($rezerwacja_id, 'godzina_od', true);
+                        $godzina_do = get_post_meta($rezerwacja_id, 'godzina_do', true);
+                        
+                        $subject = 'Potwierdzenie rezerwacji';
+                        $message = "Witaj $imie_nazwisko,\n\n";
+                        $message .= "Twoja rezerwacja na dzień $data w godzinach $godzina_od - $godzina_do została potwierdzona.\n";
+                        $message .= "Dziękujemy za dokonanie rezerwacji i płatności!\n\n";
+                        $message .= "Pozdrawiamy,\n";
+                        $message .= get_bloginfo('name');
+                        
+                        wp_mail($email, $subject, $message);
+                    } else {
+                        // Płatność nie powiodła się
+                        update_post_meta($rezerwacja_id, 'p24_status', 'failed');
+                        echo '<div class="payment-error">
+                                <h3>Płatność nie została zrealizowana</h3>
+                                <p>Wystąpił problem z płatnością. Prosimy spróbować ponownie lub skontaktować się z nami.</p>
+                            </div>';
+                    }
+                } else {
+                    // Błąd komunikacji z API
+                    update_post_meta($rezerwacja_id, 'p24_status', 'error');
+                    echo '<div class="payment-error">
+                            <h3>Błąd weryfikacji płatności</h3>
+                            <p>Wystąpił problem z weryfikacją płatności. Prosimy skontaktować się z nami.</p>
+                        </div>';
+                }
+            } else {
+                echo '<div class="payment-error">
+                        <h3>Nie znaleziono rezerwacji</h3>
+                        <p>Nie znaleziono rezerwacji powiązanej z tą płatnością. Prosimy skontaktować się z nami.</p>
+                    </div>';
+            }
+        } else if (isset($_POST['action']) && $_POST['action'] == 'zapisz_rezerwacje') {
+            // Pobierz dane konfiguracyjne Przelewy24
+            $merchantId = get_option('owocni_calendar_p24_merchant_id');
+            $posId = get_option('owocni_calendar_p24_pos_id');
+            $crc = get_option('owocni_calendar_p24_crc');
+            $apiKey = get_option('owocni_calendar_p24_api_key');
+            $p24Mode = get_option('owocni_calendar_p24_mode', 'sandbox');
+            $isSandbox = ($p24Mode === 'sandbox');
+            
+            if (!$merchantId || !$posId || !$crc || !$apiKey) {
+                error_log("Błąd: Brak ustawień Przelewy24.");
+                echo '<p style="color: red;">Błąd: Brak ustawień Przelewy24.</p>';
+                return;
+            }
+            
+            // Pobierz dane formularza
+            $data = isset($_POST['data']) ? sanitize_text_field($_POST['data']) : null;
+            $godzina_od = isset($_POST['godzina_od']) ? sanitize_text_field($_POST['godzina_od']) : null;
+            $imie_nazwisko = isset($_POST['imie_nazwisko']) ? sanitize_text_field($_POST['imie_nazwisko']) : null;
+            $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : null;
+            $telefon = isset($_POST['telefon']) ? sanitize_text_field($_POST['telefon']) : null;
+            $dodatkowe_informacje = isset($_POST['dodatkowe_informacje']) ? sanitize_textarea_field($_POST['dodatkowe_informacje']) : null;
+            $wybrany_kalendarz = isset($_POST['wybrany_kalendarz']) ? intval($_POST['wybrany_kalendarz']) : null;
+        
+            if (!$data || !$godzina_od || !$wybrany_kalendarz) {
+                error_log("Brakujące dane w formularzu.");
+                echo '<p style="color: red;">Błąd: Brakujące dane w formularzu.</p>';
+                return;
+            }
+        
+            $interval = isset($calendar_settings['interval']) ? intval($calendar_settings['interval']) : 30;
+            $godzina_do = date('H:i', strtotime($godzina_od . ' +' . $interval . ' minutes'));
+            if ($godzina_do === false) {
+                error_log("Błąd: Niepoprawny format godziny od: " . $godzina_od);
+                echo '<p style="color: red;">Błąd: Niepoprawny format godziny od.</p>';
+                return;
+            }
+            
+            // Utwórz unikalny identyfikator sesji
+            $session_id = uniqid();
+            
+            // Pobierz cenę z ustawień kalendarza lub ustaw domyślną
+            $cena_wizyty = get_post_meta($wybrany_kalendarz, '_owocni_calendar_cena', true);
+            if (empty($cena_wizyty)) {
+                $cena_wizyty = 100; // Domyślna wartość 100 PLN
+            }
+            
+            // Kwota w groszach (format wymagany przez P24)
+            $kwota = intval($cena_wizyty * 100);
+            
+            // Zapisz rezerwację
+            $rezerwacja_id = wp_insert_post(array(
+                'post_type' => 'rezerwacja',
+                'post_title' => $data . ' ' . $godzina_od . ' - ' . $godzina_do . ' - ' . $imie_nazwisko,
+                'post_status' => 'publish',
+                'meta_input' => array(
+                    'data' => $data,
+                    'godzina_od' => $godzina_od,
+                    'godzina_do' => $godzina_do,
+                    'imie_nazwisko' => $imie_nazwisko,
+                    'email' => $email,
+                    'telefon' => $telefon,
+                    'dodatkowe_informacje' => $dodatkowe_informacje,
+                    'wybrany_kalendarz' => $wybrany_kalendarz,
+                    'p24_session_id' => $session_id,
+                    'p24_order_id' => null,
+                    'p24_status' => 'pending',
+                    'kwota' => $kwota,
+                ),
+            ));
+        
+            if (is_wp_error($rezerwacja_id)) {
+                error_log("Błąd zapisu rezerwacji: " . $rezerwacja_id->get_error_message());
+                echo '<p style="color: red;">Błąd zapisu rezerwacji.</p>';
+                return; 
+            }
+            
+            // Ustaw adres powrotu po płatności
+            $returnUrl = add_query_arg(array(
+                'p24_session_id' => $session_id,
+            ), get_permalink());
+            
+            // Przygotuj dane dla Przelewy24
+            $p24ApiUrl = $isSandbox ? 'https://sandbox.przelewy24.pl/api/v1/transaction/register' : 'https://secure.przelewy24.pl/api/v1/transaction/register';
+            $p24RedirectUrl = $isSandbox ? 'https://sandbox.przelewy24.pl/trnRequest/' : 'https://secure.przelewy24.pl/trnRequest/';
+            
+            // Przygotuj dane dla transakcji
+            $description = 'Rezerwacja: ' . $data . ' ' . $godzina_od . ' - ' . $godzina_do;
+            $urlStatus = admin_url('admin-post.php?action=p24_status_update&rezerwacja_id=' . $rezerwacja_id);
+            $urlReturn = add_query_arg(array(
+                'p24_session_id' => $session_id,
+                'rezerwacja_id' => $rezerwacja_id
+            ), get_permalink());
+            
+            // Przygotuj sumę kontrolną - używamy klucza CRC do podpisu
+            $sign = hash('sha384', json_encode([
+                'sessionId' => $session_id,
+                'merchantId' => (int)$merchantId,
+                'amount' => (int)$kwota,
+                'currency' => 'PLN',
+                'crc' => $crc
+            ]));
+            
+            $p24Data = array(
+                'merchantId' => intval($merchantId),
+                'posId' => intval($posId),
+                'sessionId' => $session_id,
+                'amount' => $kwota,
+                'currency' => 'PLN',
+                'description' => $description,
+                'email' => $email,
+                'client' => $imie_nazwisko,
+                'country' => 'PL',
+                'language' => 'pl',
+                'urlReturn' => $urlReturn,
+                'urlStatus' => $urlStatus,
+                'sign' => $sign
+            );
+            
+            // Dodaj debugowanie
+            error_log('P24 Request Data: ' . print_r($p24Data, true));
+            
+            // Wywołaj API P24 do rejestracji transakcji - używamy klucza API do autoryzacji
+            $response = wp_remote_post($p24ApiUrl, array(
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Basic ' . base64_encode($merchantId . ':' . $apiKey)
+                ),
+                'body' => json_encode($p24Data),
+                'timeout' => 45,
+                'sslverify' => $isSandbox ? false : true
+            ));
+            
+            if (is_wp_error($response)) {
+                error_log('P24 API Error: ' . $response->get_error_message());
+                echo '<p style="color: red;">Błąd podczas łączenia z systemem płatności: ' . esc_html($response->get_error_message()) . '</p>';
+            } else {
+                $status_code = wp_remote_retrieve_response_code($response);
+                $body = json_decode(wp_remote_retrieve_body($response), true);
+                
+                error_log('P24 API Response: ' . print_r($body, true));
+                
+                if ($status_code === 200 && isset($body['data']['token'])) {
+                    $token = $body['data']['token'];
+                    
+                    // Zapisz token w metadanych rezerwacji
+                    update_post_meta($rezerwacja_id, 'p24_token', $token);
+                    
+                    // Przekieruj do strony płatności Przelewy24
+                    echo '<script>window.location.href = "' . $p24RedirectUrl . $token . '";</script>';
+                    echo '<p>Przekierowujemy do systemu płatności Przelewy24...</p>';
+                    echo '<p>Jeśli nie zostaniesz przekierowany automatycznie, <a href="' . $p24RedirectUrl . $token . '">kliknij tutaj</a>.</p>';
+                } else {
+                    // Błąd rejestracji transakcji
+                    $error_message = isset($body['error']) ? $body['error'] : 'Nieznany błąd';
+                    error_log('P24 Transaction Registration Error: ' . $error_message);
+                    echo '<p style="color: red;">Błąd podczas rejestracji transakcji: ' . esc_html($error_message) . '</p>';
+                }
+            }
+        } else { 
+            echo '<form id="rezerwacja-form" method="post" action="">
+                <input type="hidden" name="action" value="zapisz_rezerwacje">
+                <input type="hidden" id="rezerwacja_data" name="data">
+                <input type="hidden" id="rezerwacja_godzina_od" name="godzina_od">
+                <input type="hidden" id="rezerwacja_godzina_do" name="godzina_do">
+                <input type="hidden" name="post_type" value="rezerwacja">
+                <input type="hidden" name="wybrany_kalendarz" id="rezerwacja_kalendarz">
+                <label for="imie_nazwisko">Imię i nazwisko:</label><br>
+                <input type="text" id="imie_nazwisko" value="test debug" name="imie_nazwisko"><br><br>
+                <label for="email">Email:</label><br>
+                <input type="email" id="email" value="debug@debug.pl" name="email"><br><br>
+                <label for="telefon">Telefon:</label><br>
+                <input type="text" id="telefon" value="test debug" name="telefon"><br><br>
+                <label for="dodatkowe_informacje">Dodatkowe informacje:</label><br>
+                <textarea id="dodatkowe_informacje" name="dodatkowe_informacje"></textarea><br><br>
+                <input type="submit" value="Zarezerwuj i przejdź do płatności">
+            </form>';
+        }
+        echo '</div></div>';
 
-
-    $merchantId = get_option('owocni_calendar_p24_merchant_id');
-    $posId = get_option('owocni_calendar_p24_pos_id');
-    $crc = get_option('owocni_calendar_p24_crc');
-    if (!$merchantId || !$posId || !$crc) {
-        error_log("Błąd: Brak ustawień Przelewy24.");
-        echo '<p style="color: red;">Błąd: Brak ustawień Przelewy24.</p>';
-        return;
+        // Nie dodajemy skryptu JavaScript, bo używamy external JS w script.js
     }
-    // 1. Walidacja i formatowanie danych wejściowych
-    $data = isset($_POST['data']) ? sanitize_text_field($_POST['data']) : null;
-    $godzina_od = isset($_POST['godzina_od']) ? sanitize_text_field($_POST['godzina_od']) : null;
-    $imie_nazwisko = isset($_POST['imie_nazwisko']) ? sanitize_text_field($_POST['imie_nazwisko']) : null;
-    $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : null;
-    $telefon = isset($_POST['telefon']) ? sanitize_text_field($_POST['telefon']) : null;
-    $dodatkowe_informacje = isset($_POST['dodatkowe_informacje']) ? sanitize_textarea_field($_POST['dodatkowe_informacje']) : null;
-    $wybrany_kalendarz = isset($_POST['wybrany_kalendarz']) ? intval($_POST['wybrany_kalendarz']) : null;
+}
 
-    // Sprawdzenie, czy wszystkie wymagane dane są obecne
-    if (!$data || !$godzina_od || !$wybrany_kalendarz) {
-        error_log("Brakujące dane w formularzu.");
-        echo '<p style="color: red;">Błąd: Brakujące dane w formularzu.</p>';
-        return;
-    }
-
-    // 2. Obliczanie godzina_do na podstawie interwału kalendarza
-    $interval = isset($calendar_settings['interval']) ? intval($calendar_settings['interval']) : 30;
-    $godzina_do = date('H:i', strtotime($godzina_od . ' +' . $interval . ' minutes'));
-    if ($godzina_do === false) {
-        error_log("Błąd: Niepoprawny format godziny od: " . $godzina_od);
-        echo '<p style="color: red;">Błąd: Niepoprawny format godziny od.</p>';
-        return;
-    }
-    // 3. Tworzenie rezerwacji (jako "oczekująca na płatność")
-    $rezerwacja_id = wp_insert_post(array(
-        'post_type' => 'rezerwacja',
-        'post_title' => $data . ' ' . $godzina_od . ' - ' . $godzina_do . ' - ' . $imie_nazwisko,
-        'post_status' => 'publish',
-        'meta_input' => array(
-            'data' => $data,
-            'godzina_od' => $godzina_od,
-            'godzina_do' => $godzina_do,
-            'imie_nazwisko' => $imie_nazwisko,
-            'email' => $email,
-            'telefon' => $telefon,
-            'dodatkowe_informacje' => $dodatkowe_informacje,
-            'wybrany_kalendarz' => $wybrany_kalendarz,
-            'p24_session_id' => uniqid(),
-            'p24_order_id' => null,
-            'p24_status' => 'pending',
-        ),
-    ));
-
-    if (is_wp_error($rezerwacja_id)) {
-        error_log("Błąd zapisu rezerwacji: " . $rezerwacja_id->get_error_message());
-        echo '<p style="color: red;">Błąd zapisu rezerwacji.</p>';
-        return; // Ważne, aby zatrzymać dalsze wykonywanie kodu
-    }
-
-    // 3. Dane transakcji
-    $sessionId = get_post_meta($rezerwacja_id, 'p24_session_id', true);
-    $amount = 100; // Kwota w groszach - **ZMIENIĆ NA CENĘ WIZYTY!**
-    $currency = 'PLN';
-    $description = 'Rezerwacja wizyty';
-    $email = $_POST['email']; // Można użyć $email z walidacji
-    $urlReturn = 'https://propozycje.owocni.pl/akademiakrakenaKopia/rezerwacja-wizyty-dziekujemy/?rezerwacja_id=' . $rezerwacja_id;
-    $urlStatus = admin_url('admin-post.php?action=p24_status_update&rezerwacja_id=' . $rezerwacja_id);
-    $timeLimit = 15;
-
-    // 4. Obliczanie sumy kontrolnej (sign)
-    $sign = hash('sha384', $posId . '|' . $sessionId . '|' . $amount . '|' . $currency . '|' . $crc);
-
-    // 5. Przygotowanie danych do wysłania
-    $data = array(
-        'merchantId' => $merchantId,
-        'posId' => $posId,
-        'sessionId' => $sessionId,
-        'amount' => $amount,
-        'currency' => $currency,
-        'description' => $description,
-        'email' => $email,
-        'urlReturn' => $urlReturn,
-        'urlStatus' => $urlStatus,
-        'timeLimit' => $timeLimit,
-        'sign' => $sign,
-        'p24_json' => 1,
-    );
-
-    // 6. Wysyłanie żądania do API Przelewy24 (używamy cURL)
-    $url = 'https://secure.przelewy24.pl/api/v1/transaction/register';
-
-    $ch = curl_init($url);
-    curl_setopt_array($ch, array(
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => http_build_query($data),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_SSL_VERIFYPEER => false, // **NIEZALECANE W PRODUKCJI!**
-    ));
-
-    $response = curl_exec($ch);
-
-    if (curl_errno($ch)) {
-        $error_msg = curl_error($ch);
-        echo "Błąd cURL: " . $error_msg;
-        curl_close($ch);
-        return;
-    }
-    curl_close($ch);
-
-    // 7. Obsługa odpowiedzi z API (parsowanie JSON)
-    $response_data = json_decode($response, true);
-
-    if (isset($response_data['status']) && $response_data['status'] == 200) {
-        $token = $response_data['data']['token'];
-        $payment_url = 'https://secure.przelewy24.pl/trnRequest/' . $token;
-        wp_redirect($payment_url);
-        exit;
-    } else {
-        $error_message = isset($response_data['error']['message']) ? $response_data['error']['message'] : "Nieznany błąd Przelewy24.";
-        echo '<p style="color: red;">Błąd Przelewy24: ' . $error_message . '</p>';
-        $post = array(
-            'ID' => $rezerwacja_id,
-            'post_title' => 'ODRZUCONE - ' . get_the_title($rezerwacja_id),
-            'meta_input' => array(
-                'platnosc' => 'Płatność odrzucona',
-            ),
+/**
+ * Funkcja aktualizująca status płatności P24
+ */
+function owocni_calendar_p24_status_update() {
+    // Obsługa powiadomienia z Przelewy24
+    if (isset($_GET['rezerwacja_id'])) {
+        $rezerwacja_id = intval($_GET['rezerwacja_id']);
+        
+        // Pobierz dane konfiguracyjne
+        $merchantId = get_option('owocni_calendar_p24_merchant_id');
+        $posId = get_option('owocni_calendar_p24_pos_id');
+        $crc = get_option('owocni_calendar_p24_crc');
+        $apiKey = get_option('owocni_calendar_p24_api_key');
+        
+        // Pobierz dane z POST
+        $p24_merchant_id = isset($_POST['merchantId']) ? sanitize_text_field($_POST['merchantId']) : '';
+        $p24_pos_id = isset($_POST['posId']) ? sanitize_text_field($_POST['posId']) : '';
+        $p24_session_id = isset($_POST['sessionId']) ? sanitize_text_field($_POST['sessionId']) : '';
+        $p24_amount = isset($_POST['amount']) ? sanitize_text_field($_POST['amount']) : '';
+        $p24_currency = isset($_POST['currency']) ? sanitize_text_field($_POST['currency']) : '';
+        $p24_order_id = isset($_POST['orderId']) ? sanitize_text_field($_POST['orderId']) : '';
+        
+        if (empty($p24_session_id) || empty($p24_order_id)) {
+            wp_die('Brak niezbędnych danych.');
+        }
+        
+        // Weryfikuj dane
+        $session_id_from_db = get_post_meta($rezerwacja_id, 'p24_session_id', true);
+        
+        if ($session_id_from_db !== $p24_session_id) {
+            wp_die('Błąd weryfikacji sessionId.');
+        }
+        
+        // Oblicz sumę kontrolną
+        $sign = md5($p24_session_id . '|' . $merchantId . '|' . $p24_amount . '|' . $p24_currency . '|' . $crc);
+        
+        // Przygotuj dane do weryfikacji transakcji
+        $p24Mode = get_option('owocni_calendar_p24_mode', 'sandbox');
+        $isSandbox = ($p24Mode === 'sandbox');
+        $apiUrl = $isSandbox ? 'https://sandbox.przelewy24.pl/api/v1/transaction/verify' : 'https://secure.przelewy24.pl/api/v1/transaction/verify';
+        
+        $verify_data = array(
+            'merchantId' => intval($merchantId),
+            'posId' => intval($posId),
+            'sessionId' => $p24_session_id,
+            'amount' => $p24_amount,
+            'currency' => $p24_currency,
+            'orderId' => $p24_order_id,
+            'sign' => $sign
         );
-        wp_update_post($post);
+        
+        // Wywołaj API do weryfikacji transakcji
+        $response = wp_remote_post($apiUrl, array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($merchantId . ':' . $apiKey)
+            ),
+            'body' => json_encode($verify_data),
+            'timeout' => 45,
+            'sslverify' => $isSandbox ? false : true
+        ));
+        
+        if (is_wp_error($response)) {
+            error_log('P24 Verify Error: ' . $response->get_error_message());
+            wp_die('Błąd weryfikacji płatności.');
+        }
+        
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        
+        if (isset($body['data']['status']) && $body['data']['status'] === 'success') {
+            // Płatność zakończona sukcesem
+            update_post_meta($rezerwacja_id, 'p24_status', 'completed');
+            update_post_meta($rezerwacja_id, 'p24_order_id', $p24_order_id);
+            
+            // Aktualizuj tytuł rezerwacji
+            wp_update_post(array(
+                'ID' => $rezerwacja_id,
+                'post_title' => get_the_title($rezerwacja_id) . ' - OPŁACONE'
+            ));
+            
+            // Wyślij e-mail z potwierdzeniem
+            $email = get_post_meta($rezerwacja_id, 'email', true);
+            $imie_nazwisko = get_post_meta($rezerwacja_id, 'imie_nazwisko', true);
+            $data = get_post_meta($rezerwacja_id, 'data', true);
+            $godzina_od = get_post_meta($rezerwacja_id, 'godzina_od', true);
+            $godzina_do = get_post_meta($rezerwacja_id, 'godzina_do', true);
+            
+            $subject = 'Potwierdzenie rezerwacji';
+            $message = "Witaj $imie_nazwisko,\n\n";
+            $message .= "Twoja rezerwacja na dzień $data w godzinach $godzina_od - $godzina_do została potwierdzona.\n";
+            $message .= "Dziękujemy za dokonanie rezerwacji i płatności!\n\n";
+            $message .= "Pozdrawiamy,\n";
+            $message .= get_bloginfo('name');
+            
+            wp_mail($email, $subject, $message);
+            
+            echo 'OK';
+        } else {
+            // Płatność nieudana
+            update_post_meta($rezerwacja_id, 'p24_status', 'failed');
+            
+            // Aktualizuj tytuł rezerwacji
+            wp_update_post(array(
+                'ID' => $rezerwacja_id,
+                'post_title' => get_the_title($rezerwacja_id) . ' - ODRZUCONE'
+            ));
+            
+            error_log('P24 Payment Failed: ' . (isset($body['error']) ? $body['error'] : 'Unknown error'));
+            echo 'Payment failed';
+        }
+        
+        exit;
     }
-
-} else { echo '<form id="rezerwacja-form" method="post" action="">
-                    <input type="hidden" name="action" value="zapisz_rezerwacje">
-                    <input type="hidden" id="rezerwacja_data" name="data">
-                    <input type="hidden" id="rezerwacja_godzina_od" name="godzina_od">
-                    <input type="hidden" id="rezerwacja_godzina_do" name="godzina_do">
-                    <input type="hidden" name="post_type" value="rezerwacja">
-                    <input type="hidden" name="wybrany_kalendarz" id="rezerwacja_kalendarz">
-                    <label for="imie_nazwisko">Imię i nazwisko:</label><br>
-                    <input type="text" id="imie_nazwisko" value="test debug" name="imie_nazwisko"><br><br>
-                    <label for="email">Email:</label><br>
-                    <input type="email" id="email" value="debug@debug.pl" name="email"><br><br>
-                    <label for="telefon">Telefon:</label><br>
-                    <input type="text" id="telefon" value="test debug" name="telefon"><br><br>
-                    <label for="dodatkowe_informacje">Dodatkowe informacje:</label><br>
-                    <textarea id="dodatkowe_informacje" name="dodatkowe_informacje"></textarea><br><br>
-                    <input type="submit" value="Zarezerwuj">
-                </form>';
 }
-echo '</div></div>';
-
-    }
-}
+add_action('admin_post_p24_status_update', 'owocni_calendar_p24_status_update');
+add_action('admin_post_nopriv_p24_status_update', 'owocni_calendar_p24_status_update');

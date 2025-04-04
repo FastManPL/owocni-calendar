@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Owocni Calendar Widget for Elementor
  * Description: Kalendrz od Owocnych
- * Version: 1.0.3
+ * Version: 1.0.4
  * Author: Dawid Nowak / Owocni.pl
  */
 
@@ -330,5 +330,49 @@ function zapisz_rezerwacje() {
     }
 }
 
+
+function update_payment_info_display($post_id) {
+    $p24_status = get_post_meta($post_id, 'p24_status', true);
+    $p24_session_id = get_post_meta($post_id, 'p24_session_id', true);
+    $p24_order_id = get_post_meta($post_id, 'p24_order_id', true);
+    $kwota = get_post_meta($post_id, 'kwota', true);
+
+    $payment_info = '';
+    
+    if ($p24_status) {
+        if ($p24_status == 'completed' || $p24_status == 'paid') {
+            $payment_info = 'Status: OPŁACONE';
+        } elseif ($p24_status == 'pending') {
+            $payment_info = 'Status: OCZEKUJE NA PŁATNOŚĆ';
+        } elseif ($p24_status == 'failed') {
+            $payment_info = 'Status: PŁATNOŚĆ ODRZUCONA';
+        }
+        
+        if ($kwota) {
+            $payment_info .= ' | Kwota: ' . number_format($kwota/100, 2, ',', ' ') . ' PLN';
+        }
+        
+        if ($p24_session_id) {
+            $payment_info .= ' | ID sesji: ' . $p24_session_id;
+        }
+        
+        if ($p24_order_id) {
+            $payment_info .= ' | ID zamówienia: ' . $p24_order_id;
+        }
+        update_post_meta($post_id, 'platnosc', $payment_info);
+    }
+}
+
+add_action('save_post_rezerwacja', 'update_payment_info_after_save', 20, 3);
+function update_payment_info_after_save($post_id, $post, $update) {
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+        return;
+    }
+    
+    if (!$update) {
+        return;
+    }
+    update_payment_info_display($post_id);
+}
 
 require_once('includes/przelewy24-settings.php');
