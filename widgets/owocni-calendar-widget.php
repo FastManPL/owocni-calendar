@@ -106,7 +106,7 @@ class Owocni_Calendar_Widget extends \Elementor\Widget_Base {
             if (isset($calendar_settings['start'][$day_pl]) && $calendar_settings['start'][$day_pl] !== '--:--' && $calendar_settings['start'][$day_pl] !== '') {
                 $all_start_times[] = $calendar_settings['start'][$day_pl];
             }
-            echo '<th>' . date_i18n('l, j F', $day_timestamp) . '</th>';
+            echo '<th>' . date_i18n('l', $day_timestamp) . '<br>' . date_i18n('j F', $day_timestamp) . '</th>';
         }
         echo '</tr></thead>';
         echo '<tbody>';

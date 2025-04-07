@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Owocni Calendar Widget for Elementor
  * Description: Kalendrz od Owocnych
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: Dawid Nowak / Owocni.pl
  */
 
