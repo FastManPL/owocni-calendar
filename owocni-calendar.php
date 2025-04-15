@@ -220,7 +220,7 @@ function render_rezerwacja_meta_box( $post ) {
     $wybrany_kalendarz = get_post_meta( $post->ID, 'wybrany_kalendarz', true );
         $imie_nazwisko = get_post_meta( $post->ID, 'imie_nazwisko', true );
         $dodatkowe_informacje = get_post_meta( $post->ID, 'dodatkowe_informacje', true );
-        $cena = get_post_meta( $post->ID, 'cena', true );
+        $kwota = get_post_meta( $post->ID, 'kwota', true );
         $platnosc = get_post_meta( $post->ID, 'platnosc', true );
         $email = get_post_meta( $post->ID, 'email', true );
         $telefon = get_post_meta( $post->ID, 'telefon', true );
@@ -262,8 +262,8 @@ function render_rezerwacja_meta_box( $post ) {
                 <label for="dodatkowe_informacje"><?php _e( 'Dodatkowe informacje', 'text_domain' ); ?></label><br>
     <textarea id="dodatkowe_informacje" style="width:100%;" name="dodatkowe_informacje"><?php echo esc_textarea( $dodatkowe_informacje ); ?></textarea><br><br>
 
-                <label for="cena"><?php _e( 'Cena', 'text_domain' ); ?></label><br>
-    <input type="number" step="0.01" id="cena" name="cena" value="<?php echo esc_attr( $cena ); ?>"><br><br>
+                <label for="kwota"><?php _e( 'Kwota (w groszach)', 'text_domain' ); ?></label><br>
+    <input type="number" step="0.01" id="kwota" name="kwota" value="<?php echo esc_attr( $kwota ); ?>"><br><br>
 
     <label for="platnosc"><?php _e( 'Informacje o płatności', 'text_domain' ); ?></label><br>
     <input type="text" id="platnosc" style="width:100%;" name="platnosc" value="<?php echo esc_attr( $platnosc ); ?>"><br><br>
@@ -293,7 +293,7 @@ function save_rezerwacja_meta_box_data( $post_id ) {
         return;
     }
 
-        $fields = array('data', 'godzina_od', 'godzina_do', 'wybrany_kalendarz', 'imie_nazwisko', 'dodatkowe_informacje', 'cena', 'platnosc', 'email', 'telefon');
+        $fields = array('data', 'godzina_od', 'godzina_do', 'wybrany_kalendarz', 'imie_nazwisko', 'dodatkowe_informacje', 'kwota', 'platnosc', 'email', 'telefon');
 
         foreach ($fields as $field) {
                 if ( isset( $_POST[$field] ) ) {
